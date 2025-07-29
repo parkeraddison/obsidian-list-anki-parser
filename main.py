@@ -79,8 +79,9 @@ items will get their own cloze card where all other items are shown.
 
 import typer
 import rich
+from pathlib import Path
 
-from anki import create_deck
+from anki import create_deck, export_deck
 from extract import extract_cards
 
 def single(filepath: str = typer.Argument(..., help="Path to the markdown file extract cards from")) -> None:
@@ -88,9 +89,17 @@ def single(filepath: str = typer.Argument(..., help="Path to the markdown file e
     Extract cards from a single markdown file and print the cards.
     """
     cards = extract_cards(filepath)
-    for card in cards:
-        rich.print(card)
-        print('\n---\n')  # Separator for readability
+    # for card in cards:
+    #     rich.print(card)
+    #     print('\n---\n')  # Separator for readability
+
+    deck = create_deck(cards, deck_name="Extracted Cards")
+
+    print(f"Extracted {len(deck.notes)} notes into deck '{deck.name}' (ID: {deck.deck_id})")
+
+    filename = Path(filepath).stem
+    export_deck(deck, output_path=f"{filename}.apkg")
+    print(f"Deck exported to {filename}.apkg")
 
 
 if __name__ == "__main__":

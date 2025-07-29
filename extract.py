@@ -291,22 +291,31 @@ def _find_prior_context(
     # backwards through the tokens, only adding tokens that have a lower level
     # than the minimum we've currently seen.
     context_tokens = []
-    min_level = tokens[list_open_token_index].level
+    min_level = tokens[list_open_token_index].level - 1
     list_search = True
     in_heading = False
     min_heading = 6
+    skipping = False
+
     for token in tokens[list_open_token_index-1:None:-1]:
         if list_search:
-            # Only add tokens at a lower indent level than the last seen list
-            # item.
-            if token.level <= min_level:
-                context_tokens.append(token)
+            # Because siblings necessarily have a list_item_close, if we ever
+            # hit a close then we can skip until we reach a lower level.
+            if token.type == "list_item_close" or token.type == "bullet_list_close" or token.type == "ordered_list_close":
+                min_level = token.level - 1
+                skipping = True
 
-            if token.type == "list_item_open":
-                min_level = token.level
+            if skipping:
+                if token.level <= min_level:
+                    skipping = False
+                else:
+                    continue
+
+            context_tokens.append(token)
 
             if token.level == 0:
                 list_search = False
+
         else:
             # Heading search
             if token.type == 'heading_close':
@@ -381,9 +390,13 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
         # Extract tags
         tag_pattern = r"#([\w/][\w/-]*\w)"
-        tags = re.findall(tag_pattern, right_text)
+        tags = set(re.findall(tag_pattern, right_text))
         # Is there any content if the tags are removed?
         content_without_tags = re.sub(tag_pattern, '', inline_token.content.split(INLINE_SYMBOL[region.symbol_direction], 1)[1]).strip()
+        # FIXME: Not working as expected, tags still show up in the front. Also,
+        # consider leaving in the symbol to make it clear when reading where the
+        # sentence ends.
+
         # print(f"Right content after symbol: {right_text}")
         # print(f"Content without tags: {content_without_tags}")
 

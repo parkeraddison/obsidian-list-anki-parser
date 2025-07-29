@@ -19,6 +19,48 @@ INLINE_SYMBOL = {
 
 
 # Custom Anki Models with Context Fields
+CARD_CSS = '''
+.card {
+  font-family: Inter, arial, sans-serif;
+  font-size: 20px;
+  color: black;
+  background-color: white;
+  text-align: left;
+  --secondary: #444;
+  --tertiary: #888;
+  --accent-hsl: 210 100% 50%;
+}
+.card.nightMode  {
+    --secondary: #bbb;
+    --tertiary: #666;
+    --accent-hsl: 210 100% 70%;
+}
+.filepath {
+  font-family: monospace;
+  font-size: 80%;
+  color: var(--tertiary);
+}
+.context {
+  /* color: var(--secondary); */
+  padding-bottom: 5px;
+}
+.front ul, .front li {
+    list-style-type: none;
+}
+.cloze {
+    font-weight: bold;
+    color: hsl(var(--accent));
+}
+.cloze-inactive {
+    background-color: hsl(var(--accent-hsl), 0.1);
+}
+'''
+
+# TODO: Make styling better, more similar to logseq-anki-sync where the content
+# is basically all part of a list. Style the lists better, etc.
+# https://github.com/debanjandhar12/logseq-anki-sync/blob/0dff5363f4f43267cc5ed417168823a0278355f8/src/templates/_logseq_anki_sync.scss
+
+
 BASIC_CONTEXT_MODEL = genanki.Model(
     1874134123,  # Unique model ID
     'Basic with Context',
@@ -37,6 +79,7 @@ BASIC_CONTEXT_MODEL = genanki.Model(
 {{#Context}}<div class="context">{{Context}}</div>{{/Context}}
 </div>
 <div class="front">{{Front}}</div>
+<hr>
 ''',
             'afmt': '''
 <div class="context">
@@ -49,33 +92,7 @@ BASIC_CONTEXT_MODEL = genanki.Model(
 ''',
         },
     ],
-    css='''
-.card {
-  font-family: arial;
-  font-size: 20px;
-  text-align: center;
-  color: black;
-  background-color: white;
-}
-.context {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 10px;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 5px;
-}
-.filepath {
-  font-family: monospace;
-  color: #888;
-}
-.context {
-  margin-top: 5px;
-}
-.front, .back {
-  text-align: left;
-}
-'''
+    css=CARD_CSS
 )
 
 BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
@@ -96,6 +113,7 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
 {{#Context}}<div class="context">{{Context}}</div>{{/Context}}
 </div>
 <div class="front">{{Front}}</div>
+<hr>
 ''',
             'afmt': '''
 <div class="context">
@@ -115,6 +133,7 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
 {{#Context}}<div class="context">{{Context}}</div>{{/Context}}
 </div>
 <div class="front">{{Back}}</div>
+<hr>
 ''',
             'afmt': '''
 <div class="context">
@@ -127,33 +146,7 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
 ''',
         },
     ],
-    css='''
-.card {
-  font-family: arial;
-  font-size: 20px;
-  text-align: center;
-  color: black;
-  background-color: white;
-}
-.context {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 10px;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 5px;
-}
-.filepath {
-  font-family: monospace;
-  color: #888;
-}
-.context {
-  margin-top: 5px;
-}
-.front, .back {
-  text-align: left;
-}
-'''
+    css=CARD_CSS
 )
 
 CLOZE_CONTEXT_MODEL = genanki.Model(
@@ -172,47 +165,18 @@ CLOZE_CONTEXT_MODEL = genanki.Model(
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
 {{#Context}}<div class="context">{{Context}}</div>{{/Context}}
 </div>
-<div class="cloze">{{cloze:Text}}</div>
+{{cloze:Text}}
 ''',
             'afmt': '''
 <div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
 {{#Context}}<div class="context">{{Context}}</div>{{/Context}}
 </div>
-<div class="cloze">{{cloze:Text}}</div>
+{{cloze:Text}}
 ''',
         },
     ],
-    css='''
-.card {
-  font-family: arial;
-  font-size: 20px;
-  text-align: center;
-  color: black;
-  background-color: white;
-}
-.context {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 10px;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 5px;
-}
-.filepath {
-  font-family: monospace;
-  color: #888;
-}
-.context {
-  margin-top: 5px;
-}
-.cloze {
-  text-align: left;
-}
-.cloze .cloze-inactive {
-  color: #0066cc;
-}
-'''
+    css=CARD_CSS
 )
 
 
