@@ -77,10 +77,22 @@ items will get their own cloze card where all other items are shown.
 - Markdown and latex formatting is rendered for the final Anki card.
 """
 
+import typer
+import rich
+
 from anki import create_deck
 from extract import extract_cards
 
+def single(filepath: str = typer.Argument(..., help="Path to the markdown file extract cards from")) -> None:
+    """
+    Extract cards from a single markdown file and print the cards.
+    """
+    cards = extract_cards(filepath)
+    for card in cards:
+        rich.print(card)
+        print('\n---\n')  # Separator for readability
+
 
 if __name__ == "__main__":
-    # TODO: Implement main execution logic
-    pass
+
+    typer.run(single)

@@ -77,6 +77,7 @@ items will get their own cloze card where all other items are shown.
 
 import re
 from copy import copy, deepcopy
+from pathlib import Path
 
 import genanki
 import yaml
@@ -85,8 +86,9 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 from mdit_py_plugins import dollarmath, front_matter
 
-from const import FILE_SPLIT_PATTERN, INLINE_SYMBOL, IndexCard, IndexCloze, SymbolDirection
-
+from const import (BASIC_AND_REVERSED_CONTEXT_MODEL, BASIC_CONTEXT_MODEL,
+                   CLOZE_CONTEXT_MODEL, FILE_SPLIT_PATTERN, INLINE_SYMBOL,
+                   IndexCard, IndexCloze, SymbolDirection)
 
 md = (
     MarkdownIt("commonmark")
@@ -143,6 +145,13 @@ def _field_dict_to_list(field_dict: dict, model: genanki.Model) -> list:
     return [field_dict.get(field["name"], "") for field in model.fields]
 
 
+def _build_filepath_context(file_path: str) -> str:
+    """ Get the filepath relative to the vault root. """
+    # TODO: For now, just return the filename. Add support for finding the vault
+    # root.
+    return Path(file_path).name
+
+
 def _parse_regions_of_interest(
     tokens: list[Token],
 ) -> tuple[list[IndexCard], list[IndexCloze]]:
@@ -162,12 +171,13 @@ def _parse_regions_of_interest(
                     # Check if any of the level 0 children contain the symbol
                     for k, child in enumerate(inline.children):
                         if child.type == "text" and child.level == 0:
-                            if INLINE_SYMBOL["forward"] in child.content:
+                            # Check bidirectional first since it contains both forward and backward
+                            if INLINE_SYMBOL["bidirectional"] in child.content:
+                                direction = SymbolDirection.BIDIRECTIONAL
+                            elif INLINE_SYMBOL["forward"] in child.content:
                                 direction = SymbolDirection.FORWARD
                             elif INLINE_SYMBOL["backward"] in child.content:
                                 direction = SymbolDirection.BACKWARD
-                            elif INLINE_SYMBOL["bidirectional"] in child.content:
-                                direction = SymbolDirection.BIDIRECTIONAL
                             else:
                                 continue
 
@@ -227,7 +237,8 @@ def _incrementalize(
     front_tokens: list[Token],
     back_tokens: list[Token],
     tags: set[str] = set(),
-    context: str = '',
+    filepath_context: str = '',
+    list_context: str = '',
 ) -> genanki.Note:
     # We create cloze cards for each of the top-level list items in the back,
     # rather than a basic front/back card.
@@ -255,10 +266,12 @@ def _incrementalize(
                 current_cloze_index += 1
 
     cloze_card = genanki.Note(
-        model=genanki.CLOZE_MODEL,
+        model=CLOZE_CONTEXT_MODEL,
         fields=_field_dict_to_list({
-            'Text': context + render(front_tokens + back_tokens),
-        }, genanki.CLOZE_MODEL),
+            'FilePath': filepath_context,
+            'Context': list_context,
+            'Text': render(front_tokens + back_tokens),
+        }, CLOZE_CONTEXT_MODEL),
         tags=tags,
     )
 
@@ -320,8 +333,8 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
     notes = []
 
     text, tokens, tags = read_file(file_path)
-    context_filepath: str = '' # TODO: Add filepath breadcrumbs to context. Needs to define the root folder.
-    context = context_filepath
+    filepath_context = _build_filepath_context(file_path)
+    file_front_context = ''  # Will be set if this is a file card
 
     # First, check for file flashcards
     if "card" in tags:
@@ -333,19 +346,26 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
         # Incremental tags
         if 'incremental' in tags:
-            notes.append(_incrementalize(front_tokens, back_tokens, tags=tags - {'incremental'}, context=context))
+            notes.append(_incrementalize(
+                front_tokens, back_tokens,
+                tags=tags - {'incremental'},
+                filepath_context=filepath_context,
+                list_context=''
+            ))
         else:
             notes.append(genanki.Note(
-                model=genanki.BASIC_MODEL,
+                model=BASIC_CONTEXT_MODEL,
                 fields=_field_dict_to_list({
-                    'Front': context + render(front_tokens),
+                    'FilePath': filepath_context,
+                    'Context': '',
+                    'Front': render(front_tokens),
                     'Back': render(back_tokens),
-                }, genanki.BASIC_MODEL),
+                }, BASIC_CONTEXT_MODEL),
                 tags=tags,
             ))
 
-        context_file_front = render(front_tokens)
-        context += context_file_front
+        # Store the file front content for context in nested cards
+        file_front_context = render(front_tokens)
 
     # Now check for inline and list flashcards. First we'll parse the tokens for
     # regions of interest, then extract the cards and context from those
@@ -405,25 +425,56 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         # Get higher order headings and list items as front context.
         context_tokens = _find_prior_context(tokens, region.list_open_token_index)
 
-        # TODO: Support directional cards, back-to-front and bi-directional. For
-        # now, everything gets treated as front-to-back.
-        front_tokens = context_tokens + front_tokens
+        # Build list context from the context tokens
+        list_context = render(context_tokens) if context_tokens else ''
+
+        # Handle directional cards based on symbol direction
+        if region.symbol_direction == SymbolDirection.BACKWARD:
+            # For backward cards (<==), swap the content but preserve structure
+            if content_without_tags:
+                # Inline card: swap the inline content but keep list structure with front
+                list_structure_tokens = tokens[region.list_open_token_index:region.inline_token_index]
+                final_front_tokens = list_structure_tokens + [back_inline]
+                final_back_tokens = [front_inline]
+            else:
+                # List card: swap front and back tokens completely
+                final_front_tokens = back_tokens
+                final_back_tokens = front_tokens
+        else:
+            # For forward and bidirectional cards, use normal order
+            final_front_tokens = front_tokens
+            final_back_tokens = back_tokens
+
+        # Choose the appropriate model based on direction
+        if region.symbol_direction == SymbolDirection.BIDIRECTIONAL:
+            model = BASIC_AND_REVERSED_CONTEXT_MODEL
+        else:
+            model = BASIC_CONTEXT_MODEL
 
         # If we have an incremental tag, we create a cloze for each list item.
         if 'incremental' in tags:
+            # For incremental cards, we always use the original front/back order
+            # since cloze cards don't support directional variants
             notes.append(_incrementalize(
                 front_tokens, back_tokens,
                 tags=tags - {'incremental'},
-                context=context
+                filepath_context=filepath_context,
+                list_context=list_context + (file_front_context if "card" in tags else '')
             ))
 
         else:
+            # Combine file context if this card is within a file card
+            full_filepath_context = filepath_context
+            full_list_context = list_context + (file_front_context if "card" in tags else '')
+
             notes.append(genanki.Note(
-                model=genanki.BASIC_MODEL,
+                model=model,
                 fields=_field_dict_to_list({
-                    'Front': context + render(front_tokens),
-                    'Back': render(back_tokens),
-                }, genanki.BASIC_MODEL),
+                    'FilePath': full_filepath_context,
+                    'Context': full_list_context,
+                    'Front': render(final_front_tokens),
+                    'Back': render(final_back_tokens),
+                }, model),
                 tags=set(tags),
             ))
 
@@ -431,16 +482,24 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         # Get higher order headings and list items as front context.
         context_tokens = _find_prior_context(tokens, region.list_open_token_index)
 
-        # The final tokens are the context, list open until inline, and the
-        # modified clozed inline token.
-        text_tokens = context_tokens + tokens[region.list_open_token_index:region.inline_token_index] + region.clozed_tokens
+        # Build list context from the context tokens
+        list_context = render(context_tokens) if context_tokens else ''
+
+        # The final tokens are the list open until inline, and the modified clozed inline token.
+        text_tokens = tokens[region.list_open_token_index:region.inline_token_index] + region.clozed_tokens
+
+        # Combine file context if this card is within a file card
+        full_filepath_context = filepath_context
+        full_list_context = list_context + (file_front_context if "card" in tags else '')
 
         # Add the cloze card
         notes.append(genanki.Note(
-            model=genanki.CLOZE_MODEL,
+            model=CLOZE_CONTEXT_MODEL,
             fields=_field_dict_to_list({
-                'Text': context + render(text_tokens),
-            }, genanki.CLOZE_MODEL),
+                'FilePath': full_filepath_context,
+                'Context': full_list_context,
+                'Text': render(text_tokens),
+            }, CLOZE_CONTEXT_MODEL),
             tags=tags,
         ))
 
