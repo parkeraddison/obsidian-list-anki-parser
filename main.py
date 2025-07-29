@@ -168,12 +168,12 @@ def render(list_of_tokens: list[Token]) -> str:
     return f"\n{str(soup)}\n"
 
 
-def field_dict_to_list(field_dict: dict, model: genanki.Model) -> list:
+def _field_dict_to_list(field_dict: dict, model: genanki.Model) -> list:
     """ Uses the field order from a model to convert a field dict to a list. """
     return [field_dict.get(field["name"], "") for field in model.fields]
 
 
-def parse_regions_of_interest(
+def _parse_regions_of_interest(
     tokens: list[Token],
 ) -> tuple[list[IndexCard], list[IndexCloze]]:
     """
@@ -229,7 +229,7 @@ def parse_regions_of_interest(
                     # TODO: For now, to support rich content within the cloze,
                     # we look at the entire un-rendered inline token context,
                     # but this could be improved for safety. Check for the cloze
-                    # symbol
+                    # symbol in only a set of "safe" children (text-like).
                     cloze_pattern = re.compile(r"~~(\S(?:.*?\S)?)~~")
                     if cloze_pattern.search(inline.content):
                         clozed_content = cloze_pattern.sub(r"{{c0:: \1 }}", inline.content)
@@ -254,7 +254,7 @@ def parse_regions_of_interest(
     return card_indices, cloze_indices
 
 
-def incrementalize(
+def _incrementalize(
     front_tokens: list[Token],
     back_tokens: list[Token],
     tags: set[str] = set(),
@@ -287,7 +287,7 @@ def incrementalize(
 
     cloze_card = genanki.Note(
         model=genanki.CLOZE_MODEL,
-        fields=field_dict_to_list({
+        fields=_field_dict_to_list({
             'Text': context + render(front_tokens + back_tokens),
         }, genanki.CLOZE_MODEL),
         tags=tags,
@@ -296,7 +296,7 @@ def incrementalize(
     return cloze_card
 
 
-def find_prior_context(
+def _find_prior_context(
     tokens: list[Token],
     list_open_token_index: int,
 ) -> list[Token]:
@@ -364,11 +364,11 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
         # Incremental tags
         if 'incremental' in tags:
-            notes.append(incrementalize(front_tokens, back_tokens, tags=tags - {'incremental'}, context=context))
+            notes.append(_incrementalize(front_tokens, back_tokens, tags=tags - {'incremental'}, context=context))
         else:
             notes.append(genanki.Note(
                 model=genanki.BASIC_MODEL,
-                fields=field_dict_to_list({
+                fields=_field_dict_to_list({
                     'Front': context + render(front_tokens),
                     'Back': render(back_tokens),
                 }, genanki.BASIC_MODEL),
@@ -381,7 +381,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
     # Now check for inline and list flashcards. First we'll parse the tokens for
     # regions of interest, then extract the cards and context from those
     # regions.
-    card_indices, cloze_indices = parse_regions_of_interest(tokens)
+    card_indices, cloze_indices = _parse_regions_of_interest(tokens)
 
     for region in card_indices:
         # Let's look at the inline token and see if it is an inline card or a list
@@ -434,7 +434,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
             back_tokens = [back_inline]
 
         # Get higher order headings and list items as front context.
-        context_tokens = find_prior_context(tokens, region.list_open_token_index)
+        context_tokens = _find_prior_context(tokens, region.list_open_token_index)
 
         # TODO: Support directional cards, back-to-front and bi-directional. For
         # now, everything gets treated as front-to-back.
@@ -442,7 +442,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
         # If we have an incremental tag, we create a cloze for each list item.
         if 'incremental' in tags:
-            notes.append(incrementalize(
+            notes.append(_incrementalize(
                 front_tokens, back_tokens,
                 tags=tags - {'incremental'},
                 context=context
@@ -451,7 +451,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         else:
             notes.append(genanki.Note(
                 model=genanki.BASIC_MODEL,
-                fields=field_dict_to_list({
+                fields=_field_dict_to_list({
                     'Front': context + render(front_tokens),
                     'Back': render(back_tokens),
                 }, genanki.BASIC_MODEL),
@@ -460,7 +460,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
     for region in cloze_indices:
         # Get higher order headings and list items as front context.
-        context_tokens = find_prior_context(tokens, region.list_open_token_index)
+        context_tokens = _find_prior_context(tokens, region.list_open_token_index)
 
         # The final tokens are the context, list open until inline, and the
         # modified clozed inline token.
@@ -469,7 +469,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         # Add the cloze card
         notes.append(genanki.Note(
             model=genanki.CLOZE_MODEL,
-            fields=field_dict_to_list({
+            fields=_field_dict_to_list({
                 'Text': context + render(text_tokens),
             }, genanki.CLOZE_MODEL),
             tags=tags,
