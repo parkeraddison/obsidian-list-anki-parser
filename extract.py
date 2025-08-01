@@ -4,28 +4,30 @@ Core extraction logic for parsing markdown files and extracting flashcards.
 ## Core formats
 
 Inline flashcards have the front and back separated by a separator, e.g. `==>`.
+These are converted to cloze cards where the back content is wrapped in cloze brackets.
 - There must be text following the separator to be considered a valid flashcard.
 - If there are only tags (`#tag-content`) after the separator, it is considered
 empty.
 ```
-This is the front ==> this is the back          [VALID]
-- List items are ==> also supported #and-tags   [VALID]
+This is the front ==> this is the back          [VALID - becomes cloze]
+- List items are ==> also supported #and-tags   [VALID - becomes cloze]
 - This is considered empty ==>                  [INVALID]
 - This is empty ==> #tag-content                [INVALID]
 ```
 
 List flashcards have the front ending with the separator, then followed by a
-list of back items, each on a new line.
+list of back items, each on a new line. These are converted to cloze cards
+where each list item in the back is wrapped in cloze brackets.
 - There must be no text after the separator (except for tags).
 ```
 - This is the front ==> #tag-content
-    - These are the back items
+    - These are the back items (wrapped in {{c1:: ... }})
         - All children (and sub-children) are part of the back
-    - This is another back item
+    - This is another back item (also wrapped in {{c1:: ... }})
 ```
 
 File flashcards have the front and back separated by a newline-surrounded separator,
-e.g. `\n---\n`.
+e.g. `\n---\n`. These remain as basic front/back cards (not converted to cloze).
 - The file must contain a tag in the yaml front-matter to be considered a card.
 ```
 ---
@@ -46,7 +48,7 @@ All paragraphs
 ```
 
 Cloze flashcards are a line of text with the back wrapped by syntax, e.g.
-`~~back~~`.
+`~~back~~`. These are processed as traditional cloze cards.
 ```
 This is the front, with the ~~back~~ hidden in a cloze.
 ```
@@ -54,16 +56,19 @@ This is the front, with the ~~back~~ hidden in a cloze.
 ## Additional sugar
 
 - The separator supports forward, backward, and bi-directional cards, using
-symbols `==>`, `<==`, and `<==>`, respectively. These will determine the order
-of front and back, or use the "Reversed" card type in Anki that creates a card
-for both directions.
-- If the tag `#incremental` is used in a list flashcard, all top-level back
-items will get their own cloze card where all other items are shown.
+symbols `==>`, `<==`, and `<==>`, respectively. For cloze cards, these determine
+which content gets the cloze brackets:
+  - Forward (`==>`): back content gets cloze brackets
+  - Backward (`<==`): front content gets cloze brackets
+  - Bidirectional (`<==>`): same as forward (cloze cards don't support reversing)
+- If the tag `#incremental` is used in a list flashcard, each top-level back
+item gets its own incrementing cloze number (c1, c2, c3, etc.). Without this tag,
+all items use the same cloze number (c1).
     ```
     - This is the front ==> #incremental
-        - This is the first back item
-        - ~~Each back item gets its own cloze card~~
-        - This is a third back item
+        - This is the first back item ({{c1:: ... }})
+        - Each back item gets its own cloze card ({{c2:: ... }})
+        - This is a third back item ({{c3:: ... }})
     ```
 - All heading levels are included in the card front as prefixed context.
 - If the inline or list flashcard is itself part of a list, then all ancestors
@@ -137,7 +142,17 @@ def render(list_of_tokens: list[Token]) -> str:
             math_elem.string = f"\\[ {math_elem.string} \\]"
         else:
             math_elem.string = f"\\( {math_elem.string} \\)"
-    return f"\n{str(soup)}\n"
+
+    html_content = str(soup)
+
+    # Post-process to wrap symbols and tags with formatting spans
+    # Wrap directional symbols (but not those already in spans)
+    html_content = re.sub(r'(?<!>)(&lt;==&gt;|==&gt;|&lt;==)(?![^<]*</span>)', r'<span class="formatting">\1</span>', html_content)
+
+    # Wrap tags (but not those already in spans)
+    html_content = re.sub(r'(?<!>)(#[\w/][\w/-]*\w)(?![^<]*</span>)', r'<span class="formatting">\1</span>', html_content)
+
+    return f"\n{html_content}\n"
 
 
 def _field_dict_to_list(field_dict: dict, model: genanki.Model) -> list:
@@ -233,6 +248,117 @@ def _parse_regions_of_interest(
     return card_indices, cloze_indices
 
 
+def _create_cloze_card(
+    front_tokens: list[Token],
+    back_tokens: list[Token],
+    symbol_direction: SymbolDirection,
+    incremental: bool = False,
+    tags: set[str] = set(),
+    filepath_context: str = '',
+    list_context: str = '',
+) -> genanki.Note:
+    """
+    Create a cloze card from front and back tokens, handling directional symbols.
+
+    For list cards, the back tokens contain the nested list items that will be clozed.
+    For inline cards, the back tokens contain the inline content that will be clozed.
+    For incremental cards, each top-level list item gets its own cloze number.
+    For standard cards, all content uses the same cloze number (c1).
+    For directional cards, cloze brackets are placed around the appropriate content.
+    """
+
+    # Determine if this is an inline card (back_tokens contains a single inline token)
+    is_inline_card = (len(back_tokens) == 1 and
+                     back_tokens[0].type == 'inline')
+
+    # Handle directional cards by determining what gets clozed
+    if symbol_direction == SymbolDirection.BACKWARD:
+        # For backward cards, the "front" content should be clozed
+        if is_inline_card:
+            # For inline cards, we need to cloze the front part of the inline content
+            context_tokens = deepcopy(front_tokens)
+            cloze_tokens = deepcopy(back_tokens)
+
+            # Find the last inline token in front_tokens and wrap its content with cloze
+            for token in reversed(context_tokens):
+                if token.type == 'inline':
+                    cloze_start = Token(type='text', content='{{c1:: ', tag='', nesting=0)
+                    cloze_end = Token(type='text', content=' }}', tag='', nesting=0)
+                    token.children.insert(0, cloze_start)
+                    token.children.append(cloze_end)
+                    break
+
+            final_tokens = context_tokens + cloze_tokens
+        else:
+            # For list cards, swap and cloze the original front content
+            context_tokens = deepcopy(back_tokens)
+            cloze_tokens = deepcopy(front_tokens)
+
+            # Find the inline token in the front and wrap its content with cloze
+            for token in cloze_tokens:
+                if token.type == 'inline':
+                    cloze_start = Token(type='text', content=' {{c1:: ', tag='', nesting=0)
+                    cloze_end = Token(type='text', content=' }}', tag='', nesting=0)
+                    token.children.insert(0, cloze_start)
+                    token.children.append(cloze_end)
+                    break
+
+            final_tokens = cloze_tokens + context_tokens
+    else:
+        # For forward and bidirectional cards, the back content gets clozed
+        context_tokens = deepcopy(front_tokens)
+        cloze_tokens = deepcopy(back_tokens)
+
+        if is_inline_card:
+            # For inline cards, wrap the back inline content with cloze
+            for token in cloze_tokens:
+                if token.type == 'inline':
+                    cloze_start = Token(type='text', content=' {{c1:: ', tag='', nesting=0)
+                    cloze_end = Token(type='text', content=' }}', tag='', nesting=0)
+                    token.children.insert(0, cloze_start)
+                    token.children.append(cloze_end)
+                    break
+        else:
+            # For list cards, process the back tokens to add cloze brackets
+            current_nesting = 0
+            current_cloze_index = 1
+
+            for token in cloze_tokens:
+                if token.type == "list_item_open":
+                    current_nesting += 1
+                if current_nesting > 0:
+                    if token.type == 'inline':
+                        if incremental:
+                            cloze_num = current_cloze_index
+                        else:
+                            cloze_num = 1  # All items use the same cloze number
+
+                        # For list items, don't add leading space since they start fresh
+                        cloze_start = Token(type='text', content=f'{{{{c{cloze_num}:: ', tag='', nesting=0)
+                        cloze_end = Token(type='text', content=' }}', tag='', nesting=0)
+                        token.children.insert(0, cloze_start)
+                        token.children.append(cloze_end)
+                if token.type == "list_item_close":
+                    current_nesting -= 1
+                    if current_nesting == 0 and incremental:
+                        # Increment the cloze index for the next top-level list item
+                        current_cloze_index += 1
+
+        final_tokens = context_tokens + cloze_tokens
+
+    cloze_card = genanki.Note(
+        model=CLOZE_CONTEXT_MODEL,
+        fields=_field_dict_to_list({
+            'FilePath': filepath_context,
+            'Context': list_context,
+            'Text': render(final_tokens),
+        }, CLOZE_CONTEXT_MODEL),
+        tags=tags,
+    )
+
+    return cloze_card
+
+
 def _incrementalize(
     front_tokens: list[Token],
     back_tokens: list[Token],
@@ -240,42 +366,12 @@ def _incrementalize(
     filepath_context: str = '',
     list_context: str = '',
 ) -> genanki.Note:
-    # We create cloze cards for each of the top-level list items in the back,
-    # rather than a basic front/back card.
-    #
-    # A cloze card just wraps each of the top-level list items with
-    # `{{c1:: ... }}`, where the index increments for each item.
-    #
-    # We'll loop through the tokens in the back.
-    back_tokens = deepcopy(back_tokens)
-    current_nesting = 0
-    current_cloze_index = 1
-    for j, token in enumerate(back_tokens):
-        if token.type == "list_item_open":
-            current_nesting += 1
-        if current_nesting > 0:
-            if token.type == 'inline':
-                cloze_start = Token(type='text', content=r'{{' + f"c{current_cloze_index}:: ", tag='', nesting=0)
-                cloze_end = Token(type='text', content=r' }}', tag='', nesting=0)
-                token.children.insert(0, cloze_start)
-                token.children.append(cloze_end)
-        if token.type == "list_item_close":
-            current_nesting -= 1
-            if current_nesting == 0:
-                # Increment the cloze index for the next top-level list item
-                current_cloze_index += 1
-
-    cloze_card = genanki.Note(
-        model=CLOZE_CONTEXT_MODEL,
-        fields=_field_dict_to_list({
-            'FilePath': filepath_context,
-            'Context': list_context,
-            'Text': render(front_tokens + back_tokens),
-        }, CLOZE_CONTEXT_MODEL),
-        tags=tags,
+    """Legacy function for backward compatibility with file cards."""
+    return _create_cloze_card(
+        front_tokens, back_tokens, SymbolDirection.FORWARD,
+        incremental=True, tags=tags, filepath_context=filepath_context,
+        list_context=list_context
     )
-
-    return cloze_card
 
 
 def _find_prior_context(
@@ -396,52 +492,93 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         child = inline_token.children[region.symbol_child_index]
         left_text, right_text = (child.content).split(INLINE_SYMBOL[region.symbol_direction], 1)
 
-        # Extract tags
+        # Extract tags from the full content after the symbol for determining card type only
+        full_content_after_symbol = inline_token.content.split(INLINE_SYMBOL[region.symbol_direction], 1)[1]
         tag_pattern = r"#([\w/][\w/-]*\w)"
-        tags = set(re.findall(tag_pattern, right_text))
-        # Is there any content if the tags are removed?
-        content_without_tags = re.sub(tag_pattern, '', inline_token.content.split(INLINE_SYMBOL[region.symbol_direction], 1)[1]).strip()
-        # FIXME: Not working as expected, tags still show up in the front. Also,
-        # consider leaving in the symbol to make it clear when reading where the
-        # sentence ends.
+        tags = set(re.findall(tag_pattern, full_content_after_symbol))
 
-        # print(f"Right content after symbol: {right_text}")
-        # print(f"Content without tags: {content_without_tags}")
+        # Check if there's non-tag content (don't remove tags, just check)
+        content_without_tags = re.sub(tag_pattern, '', full_content_after_symbol).strip()
 
-        if (not content_without_tags):
-            # This is a list card. Let's check for the nested bullet list. If there
-            # is none before the list close token, then this is an invalid card and
-            # is ignored.
-            # print(f"List card found from {region.list_open_token_index} to {region.list_close_token_index}")
+        # Create formatting span with just the symbol (no tags)
+        symbol_text = INLINE_SYMBOL[region.symbol_direction]
 
-            for j in range(region.list_open_token_index + 1, region.list_close_token_index):
-                if tokens[j].type == "bullet_list_open":
-                    # Found a nested bullet list, this is a valid list card
-                    # print("Nested bullet list found at index:", j)
+        # Determine if this is a list card or inline card
+        # A list card has no content after the symbol (only tags), and must have
+        # a nested bullet list immediately following the current item
+        is_list_card = not content_without_tags
+
+        if is_list_card:
+            # This could be a list card. Check if there's a nested bullet list
+            # immediately following this inline token (not just anywhere in the region)
+            has_immediate_nested_list = False
+
+            # Look for the next non-whitespace token after the inline token
+            for j in range(region.inline_token_index + 1, region.list_close_token_index):
+                token = tokens[j]
+                if token.type == "bullet_list_open":
+                    has_immediate_nested_list = True
                     break
-            else:
-                # No nested bullet list found, this is an invalid card
-                # print("No nested bullet list found, ignoring this card.")
+                elif token.type not in ["paragraph_open", "paragraph_close"]:
+                    # If we hit any other non-paragraph token, stop looking
+                    break
+
+            if not has_immediate_nested_list:
+                # No immediate nested bullet list found, treat as invalid
                 continue
 
-            front_tokens = tokens[region.list_open_token_index:region.inline_token_index + 1]
+            # This is indeed a list card
+            is_list_card = True
+
+        if is_list_card:
+            # For list cards: front = question line, back = nested list
+            modified_inline = copy(inline_token)
+            modified_child = copy(child)
+            modified_child.content = left_text + symbol_text  # Question + symbol
+
+            # Rebuild the inline token children
+            modified_inline.children = (
+                inline_token.children[:region.symbol_child_index] +
+                [modified_child] +
+                inline_token.children[region.symbol_child_index + 1:]
+            )
+
+            front_tokens = tokens[region.list_open_token_index:region.inline_token_index] + [modified_inline]
             back_tokens = tokens[region.inline_token_index + 1:region.list_close_token_index + 1]
 
         else:
-            # This is an inline card. The front and back are based on splitting the
-            # inline content at the symbol. The front content is all tokens leading
-            # up to the child, and the back is all tokens after the child.
-            left_child, right_child = copy(child), copy(child)
-            left_child.content = left_text
+            # This is an inline card: front = question + formatting, back = answer
+            # We need to carefully split the inline content at the symbol while preserving
+            # all child tokens (like bold, italic, etc.) and wrapping tags with formatting spans
+
+            left_child = copy(child)
+            left_child.content = left_text + symbol_text
+
+            # For the right side, keep the original content
+            right_child = copy(child)
             right_child.content = right_text
+
+            # Build the children carefully:
+            # Front: everything before the symbol + left part (including symbol)
             front_children = inline_token.children[:region.symbol_child_index] + [left_child]
-            back_children = [right_child] + inline_token.children[region.symbol_child_index + 1:]
+
+            # Back: right part + everything after the symbol child
+            if content_without_tags or tags:  # Include if there's content OR just tags
+                back_children = [right_child]
+
+                # Add the remaining children after the symbol child
+                for remaining_child in inline_token.children[region.symbol_child_index + 1:]:
+                    back_children.append(remaining_child)
+            else:
+                back_children = []
+
             front_inline = copy(inline_token)
             back_inline = copy(inline_token)
             front_inline.children = front_children
             back_inline.children = back_children
+
             front_tokens = tokens[region.list_open_token_index:region.inline_token_index] + [front_inline]
-            back_tokens = [back_inline]
+            back_tokens = [back_inline] if back_children else []
 
         # Get higher order headings and list items as front context.
         context_tokens = _find_prior_context(tokens, region.list_open_token_index)
@@ -453,55 +590,20 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         # content can be nested under the list.
         list_context = _strip_trailing_closing_tags(list_context)
 
-        # Handle directional cards based on symbol direction
-        if region.symbol_direction == SymbolDirection.BACKWARD:
-            # For backward cards (<==), swap the content but preserve structure
-            if content_without_tags:
-                # Inline card: swap the inline content but keep list structure with front
-                list_structure_tokens = tokens[region.list_open_token_index:region.inline_token_index]
-                final_front_tokens = list_structure_tokens + [back_inline]
-                final_back_tokens = [front_inline]
-            else:
-                # List card: swap front and back tokens completely
-                final_front_tokens = back_tokens
-                final_back_tokens = front_tokens
-        else:
-            # For forward and bidirectional cards, use normal order
-            final_front_tokens = front_tokens
-            final_back_tokens = back_tokens
+        # Combine file context if this card is within a file card
+        full_filepath_context = filepath_context
+        full_list_context = list_context + (file_front_context if "card" in tags else '')
 
-        # Choose the appropriate model based on direction
-        if region.symbol_direction == SymbolDirection.BIDIRECTIONAL:
-            model = BASIC_AND_REVERSED_CONTEXT_MODEL
-        else:
-            model = BASIC_CONTEXT_MODEL
+        # All inline and list cards are now cloze cards
+        is_incremental = 'incremental' in tags
 
-        # If we have an incremental tag, we create a cloze for each list item.
-        if 'incremental' in tags:
-            # For incremental cards, we always use the original front/back order
-            # since cloze cards don't support directional variants
-            notes.append(_incrementalize(
-                front_tokens, back_tokens,
-                tags=tags - {'incremental'},
-                filepath_context=filepath_context,
-                list_context=list_context + (file_front_context if "card" in tags else '')
-            ))
-
-        else:
-            # Combine file context if this card is within a file card
-            full_filepath_context = filepath_context
-            full_list_context = list_context + (file_front_context if "card" in tags else '')
-
-            notes.append(genanki.Note(
-                model=model,
-                fields=_field_dict_to_list({
-                    'FilePath': full_filepath_context,
-                    'Context': full_list_context,
-                    'Front': render(final_front_tokens),
-                    'Back': render(final_back_tokens),
-                }, model),
-                tags=set(tags),
-            ))
+        notes.append(_create_cloze_card(
+            front_tokens, back_tokens, region.symbol_direction,
+            incremental=is_incremental,
+            tags=tags - ({'incremental'} if is_incremental else set()),
+            filepath_context=full_filepath_context,
+            list_context=full_list_context
+        ))
 
     for region in cloze_indices:
         # Get higher order headings and list items as front context.

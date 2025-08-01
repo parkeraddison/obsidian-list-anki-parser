@@ -40,12 +40,13 @@ CARD_CSS = '''
   font-size: 80%;
   color: var(--tertiary);
 }
-.cloze {
-    font-weight: bold;
-    color: hsl(var(--accent));
+.cloze, .cloze-inactive {
+    background-color: hsl(var(--accent-hsl) / 0.1);
+    border-radius: 4px;
+    padding: 2px 4px;
 }
-.cloze-inactive {
-    background-color: hsl(var(--accent-hsl), 0.1);
+.cloze {
+    color: hsl(var(--accent-hsl));
 }
 ul {
     list-style: disc;
@@ -71,6 +72,14 @@ ul li:has(li)::before {
 }
 .math {
     display: inline;
+}
+code {
+    background: hsl(0 0% 0% / 0.3);
+    border-radius: 4px;
+    padding: 2px 4px;
+}
+.formatting {
+    color: var(--tertiary);
 }
 '''
 
