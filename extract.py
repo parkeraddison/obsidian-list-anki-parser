@@ -334,6 +334,14 @@ def _find_prior_context(
     return context_tokens
 
 
+def _strip_trailing_closing_tags(context: str) -> str:
+    """ Remove closing </ul> and </li> tags from the end of an html string. """
+    context = context.strip()
+    while context.endswith('</ul>') or context.endswith('</li>'):
+        context = context[:-5].rstrip()
+    return context
+
+
 def extract_cards(file_path: str) -> list[genanki.Note]:
     """
     Parse a markdown file and return a list of Anki notes.
@@ -441,6 +449,10 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         # Build list context from the context tokens
         list_context = render(context_tokens) if context_tokens else ''
 
+        # Strip all tailing closing tags from the context, so that the front
+        # content can be nested under the list.
+        list_context = _strip_trailing_closing_tags(list_context)
+
         # Handle directional cards based on symbol direction
         if region.symbol_direction == SymbolDirection.BACKWARD:
             # For backward cards (<==), swap the content but preserve structure
@@ -497,6 +509,9 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
         # Build list context from the context tokens
         list_context = render(context_tokens) if context_tokens else ''
+        # Strip all tailing closing tags from the context, so that the front
+        # content can be nested under the list.
+        list_context = _strip_trailing_closing_tags(list_context)
 
         # The final tokens are the list open until inline, and the modified clozed inline token.
         text_tokens = tokens[region.list_open_token_index:region.inline_token_index] + region.clozed_tokens

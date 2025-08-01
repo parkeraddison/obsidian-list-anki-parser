@@ -40,19 +40,37 @@ CARD_CSS = '''
   font-size: 80%;
   color: var(--tertiary);
 }
-.context {
-  /* color: var(--secondary); */
-  padding-bottom: 5px;
-}
-.front ul, .front li {
-    list-style-type: none;
-}
 .cloze {
     font-weight: bold;
     color: hsl(var(--accent));
 }
 .cloze-inactive {
     background-color: hsl(var(--accent-hsl), 0.1);
+}
+ul {
+    list-style: disc;
+    position: relative;
+    padding-left: 0;
+    margin-left: 1.5em;
+}
+ul li {
+    position: relative;
+    margin-top: 0.25em;
+}
+ul li::marker {
+    color: var(--tertiary);
+}
+ul li:has(li)::before {
+    content: '';
+    position: absolute;
+    left: -14px;
+    top: 20px;
+    bottom: 0px;
+    width: 1px;
+    background: var(--tertiary);
+}
+.math {
+    display: inline;
 }
 '''
 
@@ -74,19 +92,15 @@ BASIC_CONTEXT_MODEL = genanki.Model(
         {
             'name': 'Card 1',
             'qfmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
-<div class="front">{{Front}}</div>
+{{#Context}}{{Context}}{{/Context}}
+{{Front}}
 <hr>
 ''',
             'afmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
-<div class="front">{{Front}}</div>
+{{#Context}}{{Context}}{{/Context}}
+{{Front}}
 <hr id="answer">
 <div class="back">{{Back}}</div>
 ''',
@@ -108,19 +122,15 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
         {
             'name': 'Card 1',
             'qfmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
-<div class="front">{{Front}}</div>
+{{#Context}}{{Context}}{{/Context}}
+{{Front}}
 <hr>
 ''',
             'afmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
-<div class="front">{{Front}}</div>
+{{#Context}}{{Context}}{{/Context}}
+{{Front}}
 <hr id="answer">
 <div class="back">{{Back}}</div>
 ''',
@@ -128,19 +138,31 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
         {
             'name': 'Card 2',
             'qfmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
-<div class="front">{{Back}}</div>
+{{#Context}}{{Context}}{{/Context}}
+{{Front}}
 <hr>
 ''',
             'afmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
-<div class="front">{{Back}}</div>
+{{#Context}}{{Context}}{{/Context}}
+{{Front}}
+<hr id="answer">
+<div class="back">{{Back}}</div>
+''',
+        },
+        {
+            'name': 'Card 2',
+            'qfmt': '''
+{{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
+{{#Context}}{{Context}}{{/Context}}
+{{Back}}
+<hr>
+''',
+            'afmt': '''
+{{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
+{{#Context}}{{Context}}{{/Context}}
+{{Back}}
 <hr id="answer">
 <div class="back">{{Front}}</div>
 ''',
@@ -161,17 +183,13 @@ CLOZE_CONTEXT_MODEL = genanki.Model(
         {
             'name': 'Cloze',
             'qfmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
+{{#Context}}{{Context}}{{/Context}}
 {{cloze:Text}}
 ''',
             'afmt': '''
-<div class="context">
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}<div class="context">{{Context}}</div>{{/Context}}
-</div>
+{{#Context}}{{Context}}{{/Context}}
 {{cloze:Text}}
 ''',
         },
