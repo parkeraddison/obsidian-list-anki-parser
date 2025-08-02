@@ -406,12 +406,10 @@ def _build_context(tokens: list[Token], list_open_token_index: int, file_front_c
     return full_list_context, filepath_context
 
 
-def _extract_tags_and_content(full_content_after_symbol: str) -> tuple[set[str], str]:
-    """Extract tags from content and return cleaned content without tags."""
+def _extract_tags(full_content_after_symbol: str) -> set[str]:
+    """Extract tags from content."""
     tag_pattern = r"#([\w/][\w/-]*\w)"
-    tags = set(re.findall(tag_pattern, full_content_after_symbol))
-    content_without_tags = re.sub(tag_pattern, '', full_content_after_symbol).strip()
-    return tags, content_without_tags
+    return set(re.findall(tag_pattern, full_content_after_symbol))
 
 
 def extract_cards(file_path: str) -> list[genanki.Note]:
@@ -437,7 +435,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         if 'incremental' in tags:
             notes.append(_create_cloze_card(
                 front_tokens, back_tokens, SymbolDirection.FORWARD,
-                incremental=True, tags=tags - {'incremental'},
+                incremental=True, tags=tags,
                 filepath_context=filepath_context, list_context=''
             ))
         else:
@@ -467,10 +465,13 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
         # Extract tags and determine card type
         full_content_after_symbol = inline_token.content.split(INLINE_SYMBOL[region.symbol_direction], 1)[1]
-        tags, content_without_tags = _extract_tags_and_content(full_content_after_symbol)
+        tags = _extract_tags(full_content_after_symbol)
         symbol_text = INLINE_SYMBOL[region.symbol_direction]
 
-        # Determine if this is a list card (no content after symbol, with nested list)
+        # Determine if this is a list card (only tags after symbol, with nested list)
+        # Remove tags temporarily to check if there's any other content
+        tag_pattern = r"#[\w/][\w/-]*\w"
+        content_without_tags = re.sub(tag_pattern, '', full_content_after_symbol).strip()
         is_list_card = not content_without_tags
         if is_list_card:
             # Verify there's an immediate nested bullet list
@@ -484,10 +485,10 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
         # Build front and back tokens based on card type
         if is_list_card:
-            # List card: front = question line, back = nested list
+            # List card: front = question line with tags, back = nested list
             modified_inline = copy(inline_token)
             modified_child = copy(child)
-            modified_child.content = left_text + symbol_text
+            modified_child.content = left_text + symbol_text + right_text
 
             modified_inline.children = (
                 inline_token.children[:region.symbol_child_index] +
@@ -506,7 +507,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
             front_children = inline_token.children[:region.symbol_child_index] + [left_child]
             back_children = ([right_child] + inline_token.children[region.symbol_child_index + 1:]
-                           if content_without_tags or tags else [])
+                           if right_text.strip() else [])
 
             front_inline = copy(inline_token)
             back_inline = copy(inline_token)
@@ -525,7 +526,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         notes.append(_create_cloze_card(
             front_tokens, back_tokens, region.symbol_direction,
             incremental=is_incremental,
-            tags=tags - ({'incremental'} if is_incremental else set()),
+            tags=tags,
             filepath_context=full_filepath_context,
             list_context=full_list_context
         ))
