@@ -349,9 +349,8 @@ def _create_cloze_card(
     cloze_card = genanki.Note(
         model=CLOZE_CONTEXT_MODEL,
         fields=_field_dict_to_list({
+            'Text': list_context + render(final_tokens),
             'FilePath': filepath_context,
-            'Context': list_context,
-            'Text': render(final_tokens),
         }, CLOZE_CONTEXT_MODEL),
         tags=tags,
     )
@@ -626,9 +625,8 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         notes.append(genanki.Note(
             model=CLOZE_CONTEXT_MODEL,
             fields=_field_dict_to_list({
+                'Text': full_list_context + render(text_tokens),
                 'FilePath': full_filepath_context,
-                'Context': full_list_context,
-                'Text': render(text_tokens),
             }, CLOZE_CONTEXT_MODEL),
             tags=tags,
         ))

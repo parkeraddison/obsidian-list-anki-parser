@@ -81,12 +81,10 @@ code {
 .formatting {
     color: var(--tertiary);
 }
+p {
+    margin: 0;
+}
 '''
-
-# TODO: Make styling better, more similar to logseq-anki-sync where the content
-# is basically all part of a list. Style the lists better, etc.
-# https://github.com/debanjandhar12/logseq-anki-sync/blob/0dff5363f4f43267cc5ed417168823a0278355f8/src/templates/_logseq_anki_sync.scss
-
 
 BASIC_CONTEXT_MODEL = genanki.Model(
     1874134123,  # Unique model ID
@@ -181,24 +179,22 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
 )
 
 CLOZE_CONTEXT_MODEL = genanki.Model(
-    1874134125,  # Unique model ID
-    'Cloze with Context',
+    model_id=1874134125,  # Unique model ID
+    name='Cloze with Context',
+    model_type=genanki.Model.CLOZE,
     fields=[
-        {'name': 'FilePath'},
-        {'name': 'Context'},
         {'name': 'Text'},
+        {'name': 'FilePath'},
     ],
     templates=[
         {
             'name': 'Cloze',
             'qfmt': '''
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}{{Context}}{{/Context}}
 {{cloze:Text}}
 ''',
             'afmt': '''
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}{{Context}}{{/Context}}
 {{cloze:Text}}
 ''',
         },
