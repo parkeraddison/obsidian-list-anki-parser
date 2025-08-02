@@ -1,82 +1,3 @@
-"""
-This script parses (recursively) a directory of markdown files and extracts
-flashcard formatted text from them, which are then converted to rendered Anki
-cards.
-
-## Core formats
-
-Inline flashcards have the front and back separated by a separator, e.g. `==>`.
-- There must be text following the separator to be considered a valid flashcard.
-- If there are only tags (`#tag-content`) after the separator, it is considered
-empty.
-```
-This is the front ==> this is the back          [VALID]
-- List items are ==> also supported #and-tags   [VALID]
-- This is considered empty ==>                  [INVALID]
-- This is empty ==> #tag-content                [INVALID]
-```
-
-List flashcards have the front ending with the separator, then followed by a
-list of back items, each on a new line.
-- There must be no text after the separator (except for tags).
-```
-- This is the front ==> #tag-content
-    - These are the back items
-        - All children (and sub-children) are part of the back
-    - This is another back item
-```
-
-File flashcards have the front and back separated by a newline-surrounded separator,
-e.g. `\n---\n`.
-- The file must contain a tag in the yaml front-matter to be considered a card.
-```
----
-tags: card
----
-
-This is the front
-
-All paragraphs
-- and content.
-
----
-
-This is the back.
-
-All paragraphs
-- and content.
-```
-
-Cloze flashcards are a line of text with the back wrapped by syntax, e.g.
-`~~back~~`.
-```
-This is the front, with the ~~back~~ hidden in a cloze.
-```
-
-## Additional sugar
-
-- The separator supports forward, backward, and bi-directional cards, using
-symbols `==>`, `<==`, and `<==>`, respectively. These will determine the order
-of front and back, or use the "Reversed" card type in Anki that creates a card
-for both directions.
-- If the tag `#incremental` is used in a list flashcard, all top-level back
-items will get their own cloze card where all other items are shown.
-    ```
-    - This is the front ==> #incremental
-        - This is the first back item
-        - ~~Each back item gets its own cloze card~~
-        - This is a third back item
-    ```
-- All heading levels are included in the card front as prefixed context.
-- If the inline or list flashcard is itself part of a list, then all ancestors
-  are also included in the card front after the heading context.
-- If an inline or list flashcard is part of a file flashcard, all file front
-  content is added as context to the card front.
-- Math expressions (wrapped in `$...$` or `$$...$$`) are preserved without
-  parsing for card separators.
-- Markdown and latex formatting is rendered for the final Anki card.
-"""
-
 import typer
 import rich
 from pathlib import Path
@@ -84,24 +5,56 @@ from pathlib import Path
 from anki import create_deck, export_deck
 from extract import extract_cards
 
-def single(filepath: str = typer.Argument(..., help="Path to the markdown file extract cards from")) -> None:
+app = typer.Typer(
+    no_args_is_help=True,
+    add_completion=False,
+)
+
+@app.command()
+def main(
+    path: str = typer.Argument(
+        ...,
+        help="Path to a markdown file or directory to extract cards from",
+    ),
+    name: str = typer.Option(
+        "Extracted Cards",
+        "-n", "--name",
+        help="Name of the output Anki deck",
+    ),
+) -> None:
     """
-    Extract cards from a single markdown file and print the cards.
+    Recursively extract cards from a markdown file or all markdown files in a
+    directory, and export as an Anki deck.
     """
-    cards = extract_cards(filepath)
-    # for card in cards:
-    #     rich.print(card)
-    #     print('\n---\n')  # Separator for readability
+    p = Path(path)
+    if p.is_file():
+        files = [p]
+    elif p.is_dir():
+        files = list(p.rglob("*.md"))
+        if not files:
+            print(f"No markdown files found in directory: {path}")
+            raise typer.Exit(1)
+    else:
+        print(f"Path not found: {path}")
+        raise typer.Exit(1)
 
-    deck = create_deck(cards, deck_name="Extracted Cards")
+    all_cards = []
+    for file in files:
+        cards = extract_cards(str(file))
+        all_cards.extend(cards)
 
-    print(f"Extracted {len(deck.notes)} notes into deck '{deck.name}' (ID: {deck.deck_id})")
+    deck = create_deck(all_cards, deck_name=name)
 
-    filename = Path(filepath).stem
-    export_deck(deck, output_path=f"{filename}.apkg")
-    print(f"Deck exported to {filename}.apkg")
+    print(
+        f"Extracted {len(deck.notes)} notes into deck '{deck.name}' (ID: {deck.deck_id})")
+
+    # Sanitize deck name for filename
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_")
+                        else "_" for c in name).strip("_-")
+    output_file = f"{safe_name or 'deck'}.apkg"
+    export_deck(deck, output_path=output_file)
+    print(f"Deck exported to {output_file}")
 
 
 if __name__ == "__main__":
-
-    typer.run(single)
+    app()

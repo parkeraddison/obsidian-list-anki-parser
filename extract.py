@@ -111,6 +111,9 @@ def read_file(file_path: str) -> tuple[str, list[Token], set[str]]:
     with open(file_path, "r") as f:
         text = f.read()
 
+    if not text.strip():
+        return text, [], set()
+
     tokens = md.parse(text)
     tokens = [
         t for t in tokens
@@ -150,7 +153,7 @@ def render(list_of_tokens: list[Token]) -> str:
     html_content = re.sub(r'(?<!>)(&lt;==&gt;|==&gt;|&lt;==)(?![^<]*</span>)', r'<span class="formatting">\1</span>', html_content)
 
     # Wrap tags (but not those already in spans)
-    html_content = re.sub(r'(?<!>)(#[\w/][\w/-]*\w)(?![^<]*</span>)', r'<span class="formatting">\1</span>', html_content)
+    html_content = re.sub(r'(?<!>)(#[\w/][\w/-]*\w)(?![^<]*</span>)', r'<span class="formatting tag">\1</span>', html_content)
 
     return f"\n{html_content}\n"
 
@@ -425,8 +428,13 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
 
     # First, check for file flashcards
     if "card" in tags:
-        # Split the text at the card split symbol
-        front_text, back_text = re.split(FILE_SPLIT_PATTERN, text, maxsplit=3)[2:]
+
+        try:
+            # Split the text at the card split symbol
+            front_text, back_text = re.split(FILE_SPLIT_PATTERN, text, maxsplit=3)[2:]
+        except ValueError:
+            print(f"File {file_path} does not contain a valid file card format.")
+            return notes
 
         front_tokens = md.parse(front_text)
         back_tokens = md.parse(back_text)
