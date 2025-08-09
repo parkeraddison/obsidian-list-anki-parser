@@ -139,12 +139,17 @@ def render(list_of_tokens: list[Token]) -> str:
     rendering.
     """
     soup = BeautifulSoup(md.renderer.render(list_of_tokens, md.options, {}), "html.parser")
-    # Wrap math spans with \( or \[ as needed based on class
+    # Wrap math spans with \( or \[ as needed based on class. Also, to prevent
+    # clozes from improperly ending early, ensure that any occurrences of `}}`
+    # are separated by a space.
     for math_elem in soup.find_all(['div', 'span'], class_="math"):
-        if "block" in math_elem["class"]:
-            math_elem.string = f"\\[ {math_elem.string} \\]"
-        else:
-            math_elem.string = f"\\( {math_elem.string} \\)"
+        math_content = math_elem.string
+        if math_content is not None:
+            math_content = math_content.replace('}}', '} }')
+            if "block" in math_elem["class"]:
+                math_elem.string = f"\\[ {math_content} \\]"
+            else:
+                math_elem.string = f"\\( {math_content} \\)"
 
     html_content = str(soup)
 
@@ -163,11 +168,17 @@ def _field_dict_to_list(field_dict: dict, model: genanki.Model) -> list:
     return [field_dict.get(field["name"], "") for field in model.fields]
 
 
-def _build_filepath_context(file_path: str) -> str:
-    """ Get the filepath relative to the vault root. """
-    # TODO: For now, just return the filename. Add support for finding the vault
-    # root.
-    return Path(file_path).name
+def _build_filepath_context(file_path: str, parent_dir: str | None = None) -> str:
+    """Get the filepath relative to the parent directory (breadcrumb style)."""
+    file_path_obj = Path(file_path)
+    if parent_dir is not None:
+        try:
+            rel_path = file_path_obj.relative_to(parent_dir)
+        except ValueError:
+            rel_path = file_path_obj.name
+    else:
+        rel_path = file_path_obj.name
+    return str(rel_path)
 
 
 def _detect_symbol_direction(content: str) -> SymbolDirection | None:
@@ -279,6 +290,10 @@ def _create_cloze_card(
     is_inline_card = len(back_tokens) == 1 and back_tokens[0].type == 'inline'
 
     # Determine which tokens to use as context vs cloze content
+    #
+    # FIXME: Might be doing the wrong thing. Just want to wrap the front/back in
+    # clozes accordingly; don't need to reverse the direction of their
+    # appearance.
     if symbol_direction == SymbolDirection.BACKWARD:
         context_tokens, cloze_tokens = deepcopy(back_tokens), deepcopy(front_tokens)
         if is_inline_card:
@@ -321,7 +336,8 @@ def _create_cloze_card(
                     cloze_num = current_cloze_index if incremental else 1
                     _add_cloze_to_inline_token(token, cloze_num, is_list_item=True)
 
-        final_tokens = context_tokens + cloze_tokens
+        hr_token = Token(type='hr', tag='hr', attrs={'class': 'context-separator'}, nesting=0)
+        final_tokens = context_tokens + [hr_token] + cloze_tokens
 
     return genanki.Note(
         model=CLOZE_CONTEXT_MODEL,
@@ -405,7 +421,7 @@ def _build_context(tokens: list[Token], list_open_token_index: int, file_front_c
     list_context = _strip_trailing_closing_tags(list_context)
 
     # Combine file context if this card is within a file card
-    full_list_context = list_context + (file_front_context if has_file_card else '')
+    full_list_context = (file_front_context + '<hr class="file-separator">' if has_file_card else '') + list_context
     return full_list_context, filepath_context
 
 
@@ -415,7 +431,7 @@ def _extract_tags(full_content_after_symbol: str) -> set[str]:
     return set(re.findall(tag_pattern, full_content_after_symbol))
 
 
-def extract_cards(file_path: str) -> list[genanki.Note]:
+def extract_cards(file_path: str, parent_dir: str | None = None) -> list[genanki.Note]:
     """
     Parse a markdown file and return a list of Anki notes.
     """
@@ -423,7 +439,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
     notes = []
 
     text, tokens, tags = read_file(file_path)
-    filepath_context = _build_filepath_context(file_path)
+    filepath_context = _build_filepath_context(file_path, parent_dir=parent_dir)
     file_front_context = ''  # Will be set if this is a file card
 
     # First, check for file flashcards
@@ -551,7 +567,7 @@ def extract_cards(file_path: str) -> list[genanki.Note]:
         notes.append(genanki.Note(
             model=CLOZE_CONTEXT_MODEL,
             fields=_field_dict_to_list({
-                'Text': full_list_context + render(text_tokens),
+                'Text': full_list_context + '<hr class="context-separator">' + render(text_tokens),
                 'FilePath': full_filepath_context,
             }, CLOZE_CONTEXT_MODEL),
             tags=tags,

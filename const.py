@@ -28,25 +28,34 @@ CARD_CSS = '''
   text-align: left;
   --secondary: #444;
   --tertiary: #888;
-  --accent-hsl: 210 100% 50%;
+  --accent-hsl: 210 80% 50%;
 }
 .card.nightMode  {
     --secondary: #bbb;
     --tertiary: #666;
-    --accent-hsl: 210 100% 70%;
+    --accent-hsl: 210 80% 50%;
 }
 .filepath {
   font-family: monospace;
   font-size: 80%;
   color: var(--tertiary);
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  background: var(--canvas);
+  padding-bottom: 1em;
+  border-bottom: 1px solid var(--fg);
+}
+hr#answer {
+    border-color: hsl(var(--accent-hsl));
 }
 .cloze, .cloze-inactive {
-    background-color: hsl(var(--accent-hsl) / 0.1);
+    background-color: hsl(var(--accent-hsl) / 0.05);
     border-radius: 4px;
     padding: 2px 4px;
 }
 .cloze {
-    color: hsl(var(--accent-hsl));
+    background-color: hsl(var(--accent-hsl) / 0.2);
 }
 ul {
     list-style: disc;
@@ -56,22 +65,26 @@ ul {
 }
 ul li {
     position: relative;
-    margin-top: 0.25em;
+    margin-top: 0.5em;
 }
 ul li::marker {
     color: var(--tertiary);
+    font-size: 30px;
+}
+ul li:hover {
+    list-style-type: square;
+}
+ul li:hover::marker {
+    color: hsl(var(--accent-hsl));
 }
 ul li:has(li)::before {
     content: '';
     position: absolute;
-    left: -14px;
-    top: 20px;
+    left: -18px;
+    top: 30px;
     bottom: 0px;
     width: 1px;
     background: var(--tertiary);
-}
-.math {
-    display: inline;
 }
 code {
     background: hsl(0 0% 0% / 0.3);
@@ -81,7 +94,7 @@ code {
 .formatting {
     color: var(--tertiary);
 }
-p {
+ul p {
     margin: 0;
 }
 '''
@@ -102,7 +115,7 @@ BASIC_CONTEXT_MODEL = genanki.Model(
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
 {{#Context}}{{Context}}{{/Context}}
 {{Front}}
-<hr>
+<hr id="answer">
 ''',
             'afmt': '''
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
@@ -132,12 +145,6 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
 {{#Context}}{{Context}}{{/Context}}
 {{Front}}
-<hr>
-''',
-            'afmt': '''
-{{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}{{Context}}{{/Context}}
-{{Front}}
 <hr id="answer">
 <div class="back">{{Back}}</div>
 ''',
@@ -161,12 +168,6 @@ BASIC_AND_REVERSED_CONTEXT_MODEL = genanki.Model(
         {
             'name': 'Card 2',
             'qfmt': '''
-{{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
-{{#Context}}{{Context}}{{/Context}}
-{{Back}}
-<hr>
-''',
-            'afmt': '''
 {{#FilePath}}<div class="filepath">{{FilePath}}</div>{{/FilePath}}
 {{#Context}}{{Context}}{{/Context}}
 {{Back}}

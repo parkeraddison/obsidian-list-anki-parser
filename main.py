@@ -38,9 +38,21 @@ def main(
         print(f"Path not found: {path}")
         raise typer.Exit(1)
 
+    # Search up the directory tree for a .obsidian directory
+    search_path = p if p.is_dir() else p.parent
+    found_obsidian = False
+    for ancestor in [search_path] + list(search_path.parents):
+        obsidian_dir = ancestor / ".obsidian"
+        if obsidian_dir.is_dir():
+            parent_dir = str(ancestor)
+            found_obsidian = True
+            break
+    if not found_obsidian:
+        parent_dir = str(search_path)
+
     all_cards = []
     for file in files:
-        cards = extract_cards(str(file))
+        cards = extract_cards(str(file), parent_dir=parent_dir)
         all_cards.extend(cards)
 
     deck = create_deck(all_cards, deck_name=name)
