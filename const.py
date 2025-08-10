@@ -23,34 +23,28 @@ CARD_CSS = '''
 .card {
   font-family: Inter, arial, sans-serif;
   font-size: 20px;
-  color: black;
-  background-color: white;
   text-align: left;
-  --secondary: #444;
-  --tertiary: #888;
   --accent-hsl: 210 80% 50%;
 }
 .card.nightMode  {
-    --secondary: #bbb;
-    --tertiary: #666;
     --accent-hsl: 210 80% 50%;
 }
 .filepath {
   font-family: monospace;
   font-size: 80%;
-  color: var(--tertiary);
+  color: var(--fg-subtle);
   position: sticky;
   top: 0;
   z-index: 9;
   background: var(--canvas);
-  padding-bottom: 1em;
-  border-bottom: 1px solid var(--fg);
+  padding: 1em 0;
+  border-bottom: 1px solid var(--border);
 }
 hr#answer {
     border-color: hsl(var(--accent-hsl));
 }
 .cloze, .cloze-inactive {
-    background-color: hsl(var(--accent-hsl) / 0.05);
+    background-color: hsl(var(--accent-hsl) / 0.08);
     border-radius: 4px;
     padding: 2px 4px;
 }
@@ -68,7 +62,7 @@ ul li {
     margin-top: 0.5em;
 }
 ul li::marker {
-    color: var(--tertiary);
+    color: var(--fg-subtle);
     font-size: 30px;
 }
 ul li:hover {
@@ -84,15 +78,15 @@ ul li:has(li)::before {
     top: 30px;
     bottom: 0px;
     width: 1px;
-    background: var(--tertiary);
+    background: var(--border);
 }
 code {
-    background: hsl(0 0% 0% / 0.3);
+    background: var(--canvas-code);
     border-radius: 4px;
     padding: 2px 4px;
 }
 .formatting {
-    color: var(--tertiary);
+    color: var(--fg-subtle);
 }
 ul p {
     margin: 0;
