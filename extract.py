@@ -265,8 +265,32 @@ def _add_cloze_to_inline_token(token: Token, cloze_num: int, is_list_item: bool 
     """Add cloze brackets to an inline token's children."""
     if token.type == 'inline':
         cloze_start, cloze_end = _create_cloze_tokens('', cloze_num, is_list_item)
-        token.children.insert(0, cloze_start)
-        token.children.append(cloze_end)
+
+        # Check if any text child starts with "text:: " pattern
+        double_colon_found = False
+        for i, child in enumerate(token.children):
+            if child.type == 'text' and ':: ' in child.content:
+                # Split at the first occurrence of ":: "
+                before_colon, after_colon = child.content.split(':: ', 1)
+
+                # Create new tokens for the split content
+                before_token = Token(type='text', content=before_colon + ':: ', tag='', nesting=0)
+                after_token = Token(type='text', content=after_colon, tag='', nesting=0)
+
+                # Replace the original child with the split tokens and cloze brackets
+                token.children = (
+                    token.children[:i] +
+                    [before_token, cloze_start, after_token] +
+                    token.children[i + 1:] +
+                    [cloze_end]
+                )
+                double_colon_found = True
+                break
+
+        # If no double colon pattern found, use the original behavior
+        if not double_colon_found:
+            token.children.insert(0, cloze_start)
+            token.children.append(cloze_end)
 
 
 def _create_cloze_card(
